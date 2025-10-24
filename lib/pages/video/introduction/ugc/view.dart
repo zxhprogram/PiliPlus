@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:PiliPlus/services/logger.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:PiliPlus/common/constants.dart';
@@ -652,13 +653,18 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
           ActionItem(
             icon: const Icon(FontAwesomeIcons.download),
             onTap: () async {
-              SmartDialog.showToast('下载中');
               var videoUrl = videoDetailCtr.videoUrl!;
               var audioUrl = videoDetailCtr.audioUrl!;
               print(
                 'videoUrl = $videoUrl, audioUrl = $audioUrl, args = ${videoDetailCtr.args}',
               );
               var name = videoDetailCtr.args['title']! as String;
+              String? path = await FilePicker.platform.getDirectoryPath();
+              if(path==null){
+                return;
+              }
+
+              SmartDialog.showToast('下载中');
               final headers = {
                 'origin': 'https://www.bilibili.com',
                 'range': 'bytes=0-',
@@ -670,8 +676,8 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
               };
 
               // 3. 定义本地保存路径和文件名
-              final savePathVideo = 'D:/$name-video';
-              final savePathAudio = 'D:/$name-audio';
+              final savePathVideo = '$path/$name-video';
+              final savePathAudio = '$path/$name-audio';
 
               File logFile = await LoggerUtils.getLogsPath();
               print(logFile.path);
@@ -680,7 +686,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
               await downloadFileWithHeaders(videoUrl, savePathVideo, headers);
               await downloadFileWithHeaders(audioUrl, savePathAudio, headers);
               SmartDialog.showToast('下载完成文件合成中');
-              await mergeVideoAndAudio(videoPath: savePathVideo, audioPath: savePathAudio, outputPath: 'D:/$name.mp4');
+              await mergeVideoAndAudio(videoPath: savePathVideo, audioPath: savePathAudio, outputPath: '$path/$name.mp4');
               await File(savePathAudio).delete();
               await File(savePathVideo).delete();
               SmartDialog.showToast('文件保存完成');
