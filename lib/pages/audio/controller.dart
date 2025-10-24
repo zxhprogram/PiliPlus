@@ -9,7 +9,8 @@ import 'package:PiliPlus/grpc/bilibili/app/listener/v1.pb.dart'
         PlaylistResp,
         PlaylistSource,
         PlayInfo,
-        ThumbUpReq_ThumbType;
+        ThumbUpReq_ThumbType,
+        ListOrder;
 import 'package:PiliPlus/http/constants.dart';
 import 'package:PiliPlus/http/ua_type.dart';
 import 'package:PiliPlus/pages/common/common_intro_controller.dart'
@@ -77,6 +78,8 @@ class AudioController extends GetxController
   String? _prev;
   String? _next;
   bool get reachStart => _prev == null;
+
+  ListOrder order = ListOrder.ORDER_NORMAL;
 
   @override
   void onInit() {
@@ -163,6 +166,7 @@ class AudioController extends GetxController
           ? _next
           : null,
       extraId: extraId,
+      order: order,
     );
     if (res.isSuccess) {
       final PlaylistResp data = res.data;
@@ -385,7 +389,7 @@ class AudioController extends GetxController
 
     if (GlobalData().coins != null && GlobalData().coins! < 1) {
       SmartDialog.showToast('硬币不足');
-      return;
+      // return;
     }
 
     PayCoinsPage.toPayCoinsPage(
@@ -576,6 +580,9 @@ class AudioController extends GetxController
     if (index != null && playlist != null && player != null) {
       final next = index! + 1;
       if (next < playlist!.length) {
+        if (next == playlist!.length - 1 && _next != null) {
+          _queryPlayList(isLoadNext: true);
+        }
         playIndex(next);
         return true;
       }
@@ -583,13 +590,13 @@ class AudioController extends GetxController
     return false;
   }
 
-  void playIndex(int index) {
-    if (index == this.index) return;
+  void playIndex(int index, {List<Int64>? subId}) {
+    if (index == this.index && subId == null) return;
     this.index = index;
     final audioItem = playlist![index];
     final item = audioItem.item;
     oid = item.oid;
-    subId = item.subId;
+    this.subId = subId ?? item.subId;
     itemType = item.itemType;
     _queryPlayUrl().then((res) {
       if (res) {
@@ -641,6 +648,13 @@ class AudioController extends GetxController
     await _queryPlayList(isLoadNext: true);
     if (length != playlist!.length && context.mounted) {
       (context as Element).markNeedsBuild();
+    }
+  }
+
+  void onChangeOrder(ListOrder value) {
+    if (order != value) {
+      order = value;
+      _queryPlayList(isInit: true);
     }
   }
 

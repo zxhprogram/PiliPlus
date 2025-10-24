@@ -56,6 +56,10 @@ class AudioPage extends StatefulWidget {
   );
 }
 
+extension _ListOrderExt on ListOrder {
+  String get title => const ['无序', '正序', '倒序', '随机'][value];
+}
+
 class _AudioPageState extends State<AudioPage> {
   final _controller = Get.put(
     AudioController(),
@@ -75,15 +79,30 @@ class _AudioPageState extends State<AudioPage> {
     final padding = MediaQuery.viewPaddingOf(context);
     return Scaffold(
       appBar: AppBar(
-        actions: _controller.isVideo
-            ? [
-                IconButton(
-                  onPressed: _showMore,
-                  icon: const Icon(Icons.more_vert),
-                ),
-                const SizedBox(width: 5),
-              ]
-            : null,
+        actions: [
+          Builder(
+            builder: (context) {
+              return PopupMenuButton<ListOrder>(
+                tooltip: '排序',
+                icon: const Icon(Icons.sort),
+                initialValue: _controller.order,
+                onSelected: (value) {
+                  _controller.onChangeOrder(value);
+                  (context as Element).markNeedsBuild();
+                },
+                itemBuilder: (context) => ListOrder.values
+                    .map((e) => PopupMenuItem(value: e, child: Text(e.title)))
+                    .toList(),
+              );
+            },
+          ),
+          if (_controller.isVideo)
+            IconButton(
+              onPressed: _showMore,
+              icon: const Icon(Icons.more_vert),
+            ),
+          const SizedBox(width: 5),
+        ],
       ),
       body: Padding(
         padding: EdgeInsets.only(
@@ -147,7 +166,8 @@ class _AudioPageState extends State<AudioPage> {
           maxWidth: min(640, context.mediaQueryShortestSide),
         ),
         builder: (context) {
-          final colorScheme = ColorScheme.of(context);
+          final theme = Theme.of(context);
+          final colorScheme = theme.colorScheme;
           return FractionallySizedBox(
             heightFactor: !context.mediaQuerySize.isPortrait && Utils.isMobile
                 ? 1.0
@@ -177,101 +197,200 @@ class _AudioPageState extends State<AudioPage> {
                 Expanded(
                   child: Material(
                     type: MaterialType.transparency,
-                    child: refreshIndicator(
-                      onRefresh: () => _controller.loadPrev(context),
-                      child: CustomScrollView(
-                        controller: scrollController,
-                        physics: _controller.reachStart
-                            ? const ClampingScrollPhysics()
-                            : const AlwaysScrollableScrollPhysics(
-                                parent: ClampingScrollPhysics(),
+                    child: Theme(
+                      data: theme.copyWith(
+                        dividerColor: Colors.transparent,
+                      ),
+                      child: refreshIndicator(
+                        onRefresh: () => _controller.loadPrev(context),
+                        child: CustomScrollView(
+                          controller: scrollController,
+                          physics: _controller.reachStart
+                              ? const ClampingScrollPhysics()
+                              : const AlwaysScrollableScrollPhysics(
+                                  parent: ClampingScrollPhysics(),
+                                ),
+                          slivers: [
+                            SliverPadding(
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    MediaQuery.paddingOf(context).bottom + 100,
                               ),
-                        slivers: [
-                          SliverPadding(
-                            padding: EdgeInsets.only(
-                              bottom:
-                                  MediaQuery.paddingOf(context).bottom + 100,
-                            ),
-                            sliver: SliverList.builder(
-                              itemCount: playlist.length,
-                              itemBuilder: (_, index) {
-                                if (index == playlist.length - 1) {
-                                  _controller.loadNext(context);
-                                }
-                                final isCurr = index == _controller.index;
-                                final item = playlist[index];
-                                return ListTile(
-                                  dense: true,
-                                  minTileHeight: 45,
-                                  onTap: () {
-                                    Get.back();
-                                    if (!isCurr) {
-                                      _controller.playIndex(index);
-                                    }
-                                  },
-                                  title: Text.rich(
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: isCurr
-                                        ? TextStyle(
-                                            height: 1,
-                                            fontSize: 14,
-                                            color: colorScheme.primary,
-                                            fontWeight: FontWeight.bold,
-                                          )
-                                        : const TextStyle(
-                                            height: 1,
-                                            fontSize: 14,
-                                          ),
-                                    strutStyle: const StrutStyle(
-                                      height: 1,
-                                      leading: 0,
-                                      fontSize: 14,
-                                    ),
-                                    TextSpan(
-                                      children: [
-                                        if (isCurr) ...[
-                                          WidgetSpan(
-                                            alignment:
-                                                PlaceholderAlignment.bottom,
-                                            child: Image.asset(
-                                              'assets/images/live.gif',
-                                              width: 16,
-                                              height: 16,
-                                              color: colorScheme.primary,
+                              sliver: SliverList.builder(
+                                itemCount: playlist.length,
+                                itemBuilder: (_, index) {
+                                  if (index == playlist.length - 1) {
+                                    _controller.loadNext(context);
+                                  }
+                                  final isCurr = index == _controller.index;
+                                  final item = playlist[index];
+                                  if (item.parts.length > 1) {
+                                    final subId = _controller.subId.firstOrNull;
+                                    return ExpansionTile(
+                                      dense: true,
+                                      minTileHeight: 45,
+                                      initiallyExpanded: isCurr,
+                                      collapsedIconColor: isCurr
+                                          ? colorScheme.primary
+                                          : null,
+                                      iconColor: isCurr
+                                          ? null
+                                          : colorScheme.onSurfaceVariant,
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                      title: Text(
+                                        item.arc.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: isCurr
+                                            ? TextStyle(
+                                                fontSize: 14,
+                                                color: colorScheme.primary,
+                                                fontWeight: FontWeight.bold,
+                                              )
+                                            : const TextStyle(fontSize: 14),
+                                      ),
+                                      trailing: isCurr
+                                          ? null
+                                          : iconButton(
+                                              icon: const Icon(Icons.clear),
+                                              onPressed: () {
+                                                if (index <
+                                                    _controller.index!) {
+                                                  _controller.index -= 1;
+                                                }
+                                                _controller.playlist!.removeAt(
+                                                  index,
+                                                );
+                                                (context as Element)
+                                                    .markNeedsBuild();
+                                              },
+                                              iconColor: colorScheme.outline,
+                                              size: 28,
+                                              iconSize: 18,
+                                            ),
+                                      children: item.parts.map((e) {
+                                        final isCurr = e.subId == subId;
+                                        return ListTile(
+                                          dense: true,
+                                          minTileHeight: 45,
+                                          contentPadding:
+                                              const EdgeInsetsDirectional.only(
+                                                start: 56.0,
+                                                end: 24.0,
+                                              ),
+                                          onTap: () {
+                                            Get.back();
+                                            if (!isCurr) {
+                                              _controller.playIndex(
+                                                index,
+                                                subId: [e.subId],
+                                              );
+                                            }
+                                          },
+                                          title: Text.rich(
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: isCurr
+                                                ? TextStyle(
+                                                    fontSize: 14,
+                                                    color: colorScheme.primary,
+                                                    fontWeight: FontWeight.bold,
+                                                  )
+                                                : TextStyle(
+                                                    fontSize: 14,
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                            TextSpan(
+                                              children: [
+                                                if (isCurr) ...[
+                                                  WidgetSpan(
+                                                    alignment:
+                                                        PlaceholderAlignment
+                                                            .bottom,
+                                                    child: Image.asset(
+                                                      'assets/images/live.gif',
+                                                      width: 16,
+                                                      height: 16,
+                                                      color:
+                                                          colorScheme.primary,
+                                                    ),
+                                                  ),
+                                                  const TextSpan(text: '  '),
+                                                ],
+                                                TextSpan(text: e.title),
+                                              ],
                                             ),
                                           ),
-                                          const TextSpan(text: '  '),
+                                        );
+                                      }).toList(),
+                                    );
+                                  }
+                                  return ListTile(
+                                    dense: true,
+                                    minTileHeight: 45,
+                                    onTap: () {
+                                      Get.back();
+                                      if (!isCurr) {
+                                        _controller.playIndex(index);
+                                      }
+                                    },
+                                    title: Text.rich(
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: isCurr
+                                          ? TextStyle(
+                                              fontSize: 14,
+                                              color: colorScheme.primary,
+                                              fontWeight: FontWeight.bold,
+                                            )
+                                          : const TextStyle(fontSize: 14),
+                                      TextSpan(
+                                        children: [
+                                          if (isCurr) ...[
+                                            WidgetSpan(
+                                              alignment:
+                                                  PlaceholderAlignment.bottom,
+                                              child: Image.asset(
+                                                'assets/images/live.gif',
+                                                width: 16,
+                                                height: 16,
+                                                color: colorScheme.primary,
+                                              ),
+                                            ),
+                                            const TextSpan(text: '  '),
+                                          ],
+                                          TextSpan(
+                                            text: item.arc.title,
+                                          ),
                                         ],
-                                        TextSpan(
-                                          text: item.arc.title,
-                                        ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                  trailing: isCurr
-                                      ? null
-                                      : iconButton(
-                                          icon: const Icon(Icons.clear),
-                                          onPressed: () {
-                                            if (index < _controller.index!) {
-                                              _controller.index -= 1;
-                                            }
-                                            _controller.playlist!.removeAt(
-                                              index,
-                                            );
-                                            (context as Element)
-                                                .markNeedsBuild();
-                                          },
-                                          iconColor: colorScheme.outline,
-                                          size: 28,
-                                          iconSize: 18,
-                                        ),
-                                );
-                              },
+                                    trailing: isCurr
+                                        ? null
+                                        : iconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              if (index < _controller.index!) {
+                                                _controller.index -= 1;
+                                              }
+                                              _controller.playlist!.removeAt(
+                                                index,
+                                              );
+                                              (context as Element)
+                                                  .markNeedsBuild();
+                                            },
+                                            iconColor: colorScheme.outline,
+                                            size: 28,
+                                            iconSize: 18,
+                                          ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -616,8 +735,8 @@ class _AudioPageState extends State<AudioPage> {
     final baseBarColor = colorScheme.brightness.isDark
         ? const Color(0x33FFFFFF)
         : const Color(0x33999999);
-    return Obx(() {
-      final child = ProgressBar(
+    final child = Obx(
+      () => ProgressBar(
         progress: _controller.position.value,
         total: _controller.duration.value,
         baseBarColor: baseBarColor,
@@ -630,15 +749,15 @@ class _AudioPageState extends State<AudioPage> {
         onDragStart: _onDragStart,
         onDragUpdate: _onDragUpdate,
         onSeek: _onSeek,
+      ),
+    );
+    if (Utils.isDesktop) {
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: child,
       );
-      if (Utils.isDesktop) {
-        return MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: child,
-        );
-      }
-      return child;
-    });
+    }
+    return child;
   }
 
   Widget _buildDuration(ColorScheme colorScheme) {
@@ -817,7 +936,10 @@ class _AudioPageState extends State<AudioPage> {
                     ),
                     if (audioItem.arc.hasDesc()) ...[
                       const SizedBox(height: 10),
-                      SelectableText(audioItem.arc.desc),
+                      SelectableText(
+                        audioItem.arc.desc,
+                        scrollPhysics: const NeverScrollableScrollPhysics(),
+                      ),
                     ],
                   ],
                 ),

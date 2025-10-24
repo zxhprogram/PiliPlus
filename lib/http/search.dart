@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/init.dart';
 import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/http/ua_type.dart';
 import 'package:PiliPlus/models/common/search/search_type.dart';
 import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/models/search/suggest.dart';
@@ -11,6 +12,7 @@ import 'package:PiliPlus/models_new/pgc/pgc_info_model/result.dart';
 import 'package:PiliPlus/models_new/search/search_rcmd/data.dart';
 import 'package:PiliPlus/models_new/search/search_trending/data.dart';
 import 'package:PiliPlus/utils/extension.dart';
+import 'package:PiliPlus/utils/request_utils.dart';
 import 'package:PiliPlus/utils/wbi_sign.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -55,6 +57,8 @@ class SearchHttp {
     int? pubBegin,
     int? pubEnd,
     required String qvId,
+    String? gaiaVtoken,
+    required ValueChanged<String> onSuccess,
   }) async {
     var params = await WbiSign.makSign({
       'search_type': searchType.name,
@@ -77,15 +81,17 @@ class SearchHttp {
       'from_spmid': 333.337,
       'platform': 'pc',
       'source_tag': 3,
-      'gaia_vtoken': '',
       'qv_id': qvId,
       'web_location': 1430654,
+      'gaia_vtoken': ?gaiaVtoken,
     });
     var res = await Request().get(
       Api.searchByType,
       queryParameters: params,
       options: Options(
         headers: {
+          if (gaiaVtoken != null) 'cookie': 'x-bili-gaia-vtoken=$gaiaVtoken',
+          'user-agent': UaType.pc.ua,
           'origin': 'https://search.bilibili.com',
           'referer':
               'https://search.bilibili.com/${searchType.name}?keyword=$keyword',
@@ -95,24 +101,29 @@ class SearchHttp {
     final resData = res.data;
     if (resData is Map) {
       if (resData['code'] == 0) {
-        if (resData.containsKey('v_voucher')) return const Error('触发风控');
+        final Map<String, dynamic> dataData = resData['data'];
+        final vVoucher = dataData['v_voucher'];
+        if (vVoucher != null) {
+          RequestUtils.validate(vVoucher, onSuccess);
+          return const Error('触发风控');
+        }
         dynamic data;
         try {
           switch (searchType) {
             case SearchType.video:
-              data = SearchVideoData.fromJson(res.data['data']);
+              data = SearchVideoData.fromJson(dataData);
               break;
             case SearchType.live_room:
-              data = SearchLiveData.fromJson(res.data['data']);
+              data = SearchLiveData.fromJson(dataData);
               break;
             case SearchType.bili_user:
-              data = SearchUserData.fromJson(res.data['data']);
+              data = SearchUserData.fromJson(dataData);
               break;
             case SearchType.media_bangumi || SearchType.media_ft:
-              data = SearchPgcData.fromJson(res.data['data']);
+              data = SearchPgcData.fromJson(dataData);
               break;
             case SearchType.article:
-              data = SearchArticleData.fromJson(res.data['data']);
+              data = SearchArticleData.fromJson(dataData);
               break;
             // default:
             //   break;
@@ -123,7 +134,7 @@ class SearchHttp {
           return Error(err.toString());
         }
       } else {
-        return Error(res.data['message'], code: resData['code']);
+        return Error(resData['message'], code: resData['code']);
       }
     } else {
       return const Error('服务器错误');

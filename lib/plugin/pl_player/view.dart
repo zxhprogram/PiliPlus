@@ -221,14 +221,25 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
       });
     }
 
-    _tapGestureRecognizer = plPlayerController.enableTapDm
-        ? ImmediateTapGestureRecognizer(
-            onTapDown: _onTapDown,
-            onTapUp: _onTapUp,
-            onTapCancel: _removeDmAction,
-            allowedButtonsFilter: (buttons) => buttons == kPrimaryButton,
-          )
-        : (TapGestureRecognizer()..onTapUp = _onTapUp);
+    if (plPlayerController.enableTapDm) {
+      _tapGestureRecognizer = ImmediateTapGestureRecognizer(
+        onTapDown: plPlayerController.enableShowDanmaku.value
+            ? _onTapDown
+            : null,
+        onTapUp: _onTapUp,
+        onTapCancel: _removeDmAction,
+        allowedButtonsFilter: (buttons) => buttons == kPrimaryButton,
+      );
+
+      _danmakuListener = plPlayerController.enableShowDanmaku.listen((value) {
+        if (!value) _removeDmAction();
+        (_tapGestureRecognizer as ImmediateTapGestureRecognizer).onTapDown =
+            value ? _onTapDown : null;
+      });
+    } else {
+      _tapGestureRecognizer = TapGestureRecognizer()..onTapUp = _onTapUp;
+    }
+
     _doubleTapGestureRecognizer = DoubleTapGestureRecognizer()
       ..onDoubleTapDown = _onDoubleTapDown;
   }
@@ -277,6 +288,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
     WakelockPlus.enabled.then((i) {
       if (i) WakelockPlus.disable();
     });
+    _danmakuListener?.cancel();
     _tapGestureRecognizer.dispose();
     _longPressRecognizer?.dispose();
     _doubleTapGestureRecognizer.dispose();
@@ -287,7 +299,6 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
       FlutterVolumeController.removeListener();
     }
     transformationController.dispose();
-    _refreshDmCallback = null;
     _removeDmAction();
     super.dispose();
   }
@@ -1130,8 +1141,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         if (_suspendedDm == null) {
           plPlayerController.controls = !plPlayerController.showControls.value;
         } else {
-          _dmOffset = details.localPosition;
-          _refreshDmCallback?.call();
+          _dmOffset.value = details.localPosition;
         }
         break;
     }
@@ -1143,9 +1153,7 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
       final pos = details.localPosition;
       final item = ctr.findSingleDanmaku(pos);
       if (item == null) {
-        if (_suspendedDm != null) {
-          _removeDmAction();
-        }
+        _removeDmAction();
       } else if (item != _suspendedDm) {
         if (item.content.extra == null) {
           _removeDmAction();
@@ -1153,7 +1161,6 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         }
         _suspendedDm?.suspend = false;
         _suspendedDm = item..suspend = true;
-        _dmOffset = pos;
       }
     }
   }
@@ -1178,9 +1185,12 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
         )
         ..onLongPressStart = ((_) =>
             plPlayerController.setLongPressStatus(true))
-        ..onLongPressEnd = (_) => plPlayerController.setLongPressStatus(false);
+        ..onLongPressEnd = ((_) => plPlayerController.setLongPressStatus(false))
+        ..onLongPressCancel = (() =>
+            plPlayerController.setLongPressStatus(false));
   late final OneSequenceGestureRecognizer _tapGestureRecognizer;
   late final DoubleTapGestureRecognizer _doubleTapGestureRecognizer;
+  StreamSubscription<bool>? _danmakuListener;
 
   void _onPointerDown(PointerDownEvent event) {
     if (Utils.isDesktop) {
@@ -1336,15 +1346,14 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
           ),
 
         if (plPlayerController.enableTapDm)
-          Builder(
-            builder: (context) {
-              _refreshDmCallback = () {
-                if (context.mounted) {
-                  ((context) as Element).markNeedsBuild();
-                }
-              };
-              if (_dmOffset != null && _suspendedDm != null) {
-                return _buildDmAction(_suspendedDm!, _dmOffset!);
+          Obx(
+            () {
+              if (!plPlayerController.enableShowDanmaku.value) {
+                return const SizedBox.shrink();
+              }
+              final dmOffset = _dmOffset.value;
+              if (dmOffset != null && _suspendedDm != null) {
+                return _buildDmAction(_suspendedDm!, dmOffset);
               }
               return const SizedBox.shrink();
             },
@@ -2200,14 +2209,14 @@ class _PLVideoPlayerState extends State<PLVideoPlayer>
   static const _actionItemHeight = 35.0 - _triangleHeight;
 
   DanmakuItem<DanmakuExtra>? _suspendedDm;
-  Offset? _dmOffset;
-  void Function()? _refreshDmCallback;
+  late final Rxn<Offset> _dmOffset = Rxn<Offset>();
 
   void _removeDmAction() {
-    _suspendedDm?.suspend = false;
-    _suspendedDm = null;
-    _dmOffset = null;
-    _refreshDmCallback?.call();
+    if (_suspendedDm != null) {
+      _suspendedDm?.suspend = false;
+      _suspendedDm = null;
+      _dmOffset.value = null;
+    }
   }
 
   Widget _dmActionItem(
