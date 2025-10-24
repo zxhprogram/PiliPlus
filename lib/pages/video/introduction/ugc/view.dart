@@ -652,6 +652,7 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
           ActionItem(
             icon: const Icon(FontAwesomeIcons.download),
             onTap: () async {
+              SmartDialog.showToast('下载中');
               var videoUrl = videoDetailCtr.videoUrl!;
               var audioUrl = videoDetailCtr.audioUrl!;
               print(
@@ -678,9 +679,11 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
               // 4. 执行下载函数
               await downloadFileWithHeaders(videoUrl, savePathVideo, headers);
               await downloadFileWithHeaders(audioUrl, savePathAudio, headers);
+              SmartDialog.showToast('下载完成文件合成中');
               await mergeVideoAndAudio(videoPath: savePathVideo, audioPath: savePathAudio, outputPath: 'D:/$name.mp4');
               await File(savePathAudio).delete();
               await File(savePathVideo).delete();
+              SmartDialog.showToast('文件保存完成');
             },
             selectStatus: false,
             semanticsLabel: '下载',
