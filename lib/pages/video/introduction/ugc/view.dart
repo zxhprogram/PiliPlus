@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'package:PiliPlus/services/logger.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:PiliPlus/common/constants.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
 import 'package:PiliPlus/common/widgets/pendant_avatar.dart';
@@ -32,7 +36,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart' hide ContextExtensionss;
+import 'package:logger/logger.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 class UgcIntroPanel extends StatefulWidget {
   const UgcIntroPanel({
@@ -44,6 +51,7 @@ class UgcIntroPanel extends StatefulWidget {
     required this.isPortrait,
     required this.isHorizontal,
   });
+
   final String heroTag;
   final Function showAiBottomSheet;
   final Function showEpisodes;
@@ -506,6 +514,63 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
     );
   }
 
+  Future<bool> mergeVideoAndAudio({required String videoPath,required String audioPath,
+    required String outputPath}) async {
+    String ffmpegPath = await loadExePath('ffmpeg.exe');
+    await loadExePath('avcodec-61.dll');
+    await loadExePath('avdevice-61.dll');
+    await loadExePath('avfilter-10.dll');
+    await loadExePath('avformat-61.dll');
+    await loadExePath('avutil-59.dll');
+    await loadExePath('swresample-5.dll');
+    await loadExePath('swscale-8.dll');
+
+    // 构建命令行参数
+    final arguments = [
+      '-i', videoPath, // 输入视频
+      '-i', audioPath, // 输入音频
+      '-c:v', 'copy', // 直接复制视频流，不重新编码
+      '-c:a', 'copy', // 直接复制音频流，不重新编码
+      outputPath, // 输出文件
+      '-y', // 如果输出文件已存在，直接覆盖
+    ];
+
+    logger.log(Level.error, '正在执行命令: $ffmpegPath ${arguments.join(' ')}');
+
+    try {
+      // 运行 ffmpeg 进程并等待它完成
+      final result = await Process.run(ffmpegPath, arguments);
+
+      // 检查退出码。0 表示成功。
+      if (result.exitCode == 0) {
+        logger.log(Level.error, '合并成功！输出文件: $outputPath');
+        return true;
+      } else {
+        // 如果失败，打印 ffmpeg 的错误输出
+        logger..log(Level.error, '合并失败。FFmpeg 退出码: ${result.exitCode}')
+          ..log(Level.error, 'FFmpeg 错误日志 (stderr): ${result.stderr}');
+        return false;
+      }
+    } catch (e) {
+      logger..log(Level.error, '执行 ffmpeg 命令时发生异常: $e')
+        ..log(Level.error, '请确保 ffmpeg 已经安装并添加到了系统的 PATH 环境变量中。');
+      return false;
+    }
+  }
+
+  Future<String> loadExePath(String file) async {
+    final Directory appSupportDir = await getApplicationSupportDirectory();
+    final String ffmpegPath = path.join(appSupportDir.path, file);
+    final File ffmpegFile = File(ffmpegPath);
+
+    if (!ffmpegFile.existsSync()) {
+      final ByteData byteData = await rootBundle.load('assets/ffmpeg/$file');
+      final List<int> bytes = byteData.buffer.asUint8List();
+      await ffmpegFile.writeAsBytes(bytes, flush: true);
+    }
+    return ffmpegPath;
+  }
+
   Widget actionGrid(
     BuildContext context,
     bool isLoading,
@@ -585,6 +650,43 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
             ),
           ),
           ActionItem(
+            icon: const Icon(FontAwesomeIcons.download),
+            onTap: () async {
+              var videoUrl = videoDetailCtr.videoUrl!;
+              var audioUrl = videoDetailCtr.audioUrl!;
+              print(
+                'videoUrl = $videoUrl, audioUrl = $audioUrl, args = ${videoDetailCtr.args}',
+              );
+              var name = videoDetailCtr.args['title']! as String;
+              final headers = {
+                'origin': 'https://www.bilibili.com',
+                'range': 'bytes=0-',
+                'referer':
+                'https://www.bilibili.com/video/${videoDetailCtr.args['bvid']!}',
+                'sec-fetch-mode': 'cors',
+                'user-agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+              };
+
+              // 3. 定义本地保存路径和文件名
+              final savePathVideo = 'D:/$name-video';
+              final savePathAudio = 'D:/$name-audio';
+
+              File logFile = await LoggerUtils.getLogsPath();
+              print(logFile.path);
+              logger.log(Level.error,'hhhh');
+              // 4. 执行下载函数
+              await downloadFileWithHeaders(videoUrl, savePathVideo, headers);
+              await downloadFileWithHeaders(audioUrl, savePathAudio, headers);
+              await mergeVideoAndAudio(videoPath: savePathVideo, audioPath: savePathAudio, outputPath: 'D:/$name.mp4');
+              await File(savePathAudio).delete();
+              await File(savePathVideo).delete();
+            },
+            selectStatus: false,
+            semanticsLabel: '下载',
+            text: '下载',
+          ),
+          ActionItem(
             icon: const Icon(FontAwesomeIcons.shareFromSquare),
             onTap: () => introController.actionShareVideo(context),
             selectStatus: false,
@@ -596,6 +698,50 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
         ],
       ),
     );
+  }
+
+  Future<void> downloadFileWithHeaders(
+      String url,
+      String savePath,
+      Map<String, String> headers,
+      ) async {
+    var httpClient = http.Client();
+    try {
+      // 创建一个请求对象
+      var request = http.Request('GET', Uri.parse(url));
+
+      // 将所有 headers 添加到请求中
+      request.headers.addAll(headers);
+
+      // 发送请求并获取流式响应
+      var response = await httpClient.send(request);
+
+      // 检查响应状态码。由于这是一个范围请求 (range header),
+      // 成功的响应码通常是 206 (Partial Content)。
+      if (response.statusCode == 206 || response.statusCode == 200) {
+        // 打开一个文件用于写入
+        var file = File(savePath);
+        var sink = file.openWrite();
+
+        // 将响应流通过管道直接写入文件
+        await response.stream.pipe(sink);
+
+        // 关闭文件流
+        await sink.close();
+
+        print('文件片段下载成功，并保存至: $savePath');
+        print('服务器响应状态码: ${response.statusCode}');
+      } else {
+        print('下载失败，服务器返回状态码: ${response.statusCode}');
+        // 如果需要，可以打印响应内容以进行调试
+        // print('错误响应: ${await response.stream.bytesToString()}');
+      }
+    } catch (e) {
+      print('下载过程中发生错误: $e');
+    } finally {
+      // 确保 HTTP 客户端被关闭
+      httpClient.close();
+    }
   }
 
   static final RegExp urlRegExp = RegExp(
