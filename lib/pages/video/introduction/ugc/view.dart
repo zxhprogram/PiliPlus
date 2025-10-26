@@ -650,17 +650,16 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
               text: '再看',
             ),
           ),
-          ActionItem(
+          if(Platform.isWindows) ActionItem(
             icon: const Icon(FontAwesomeIcons.download),
             onTap: () async {
               var videoUrl = videoDetailCtr.videoUrl!;
               var audioUrl = videoDetailCtr.audioUrl!;
-              print(
-                'videoUrl = $videoUrl, audioUrl = $audioUrl, args = ${videoDetailCtr.args}',
-              );
+              logger.log(Level.error,'videoUrl = $videoUrl, audioUrl = $audioUrl, args = ${videoDetailCtr.args}');
               var name = videoDetailCtr.args['title']! as String;
               String? path = await FilePicker.platform.getDirectoryPath();
               if(path==null){
+                SmartDialog.showToast('下载已取消');
                 return;
               }
 
@@ -681,7 +680,6 @@ class _UgcIntroPanelState extends State<UgcIntroPanel> {
 
               File logFile = await LoggerUtils.getLogsPath();
               print(logFile.path);
-              logger.log(Level.error,'hhhh');
               // 4. 执行下载函数
               await downloadFileWithHeaders(videoUrl, savePathVideo, headers);
               await downloadFileWithHeaders(audioUrl, savePathAudio, headers);
